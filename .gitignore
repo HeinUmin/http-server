@@ -1,0 +1,5 @@
+.*
+!.gitignore
+*.o
+http-server
+log/
