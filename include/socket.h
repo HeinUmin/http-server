@@ -2,8 +2,8 @@
 #define SOCKET_H
 #include <arpa/inet.h>
 
-int close_socket(int server_sock, fd_set *rfds);
-int init_socket(fd_set *rfds, uint16_t port);
-int connect_socket(int server_sock, fd_set *rfds);
+int close_socket(int socket_no);
+int init_socket(uint16_t port);
+int connect_socket(int server_sock, struct sockaddr *sockaddr);
 
 #endif
