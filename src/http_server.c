@@ -1,50 +1,54 @@
-#include "http_server.h"
+#include "log.h"
+#include "server.h"
 #include "socket.h"
+
 #include <errno.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
-struct Client_info {
-    int client_sock;
-    struct sockaddr_in sockaddr;
-};
+#define ERR_BUF_SIZE 64
 
 void *handle_request(void *arg) {
-    struct Client_info *client_info = (struct Client_info *)arg;
-    char ip_str[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &client_info->sockaddr.sin_addr, ip_str,
-              INET_ADDRSTRLEN);
-    printf("Handle request from %s:%d\n", ip_str,
-           ntohs(client_info->sockaddr.sin_port));
+    char err_buf[ERR_BUF_SIZE];
+    struct Sockinfo *client_info = arg;
+    if (sprintf(err_buf, "Handle request for socket %d",
+                client_info->socket_fd) < 0) {
+        strerror_r(errno, err_buf, ERR_BUF_SIZE);
+        error_log(WARN, &client_info->sockaddr, "snprintf", err_buf);
+    } else {
+        error_log(DEBUG, &client_info->sockaddr, "handle_request", err_buf);
+    }
+
     // TODO: Implement handle_request
     return (void *)EXIT_SUCCESS;
 }
 
 void *http_server(void *arg) {
+    char err_buf[ERR_BUF_SIZE];
     int server_sock = 0;
-    struct Client_info client_info;
-    server_sock = init_socket(8080);
-    if (server_sock < 0) {
-        close_socket(server_sock);
-        return (void *)EXIT_FAILURE;
-    }
-    printf("Init socket %d\n", server_sock);
+    pthread_t thread = 0;
+    struct Sockinfo client_info = {
+        .socket_fd = 0,
+        .sockaddr = {.sin_family = AF_INET,
+                     .sin_port = htons(8080),
+                     .sin_addr.s_addr = htonl(INADDR_ANY)}};
+    // TODO: port number should be configurable
+
+    server_sock = init_socket(NULL);
+    if (server_sock < 0) { return (void *)EXIT_FAILURE; }
+    printf("HTTP server started\n");
 
     while (1) {
-        client_info.client_sock = connect_socket(
-            server_sock, (struct sockaddr *)&client_info.sockaddr);
-        if (client_info.client_sock < 0) {
-            if (errno == EWOULDBLOCK) { continue; }
-            close_socket(server_sock);
-            return (void *)EXIT_FAILURE;
-        }
-        printf("Connect socket %d\n", client_info.client_sock);
+        client_info.socket_fd =
+            connect_socket(server_sock, &client_info.sockaddr);
+        if (client_info.socket_fd < 0) { return (void *)EXIT_FAILURE; }
 
-        pthread_t thread = 0;
-        if (pthread_create(&thread, NULL, handle_request,
-                           (void *)&client_info) != 0) {
-            close_socket(client_info.client_sock);
+        if (pthread_create(&thread, NULL, handle_request, &client_info) != 0) {
+            strerror_r(errno, err_buf, ERR_BUF_SIZE);
+            error_log(FATAL, &client_info.sockaddr, "pthread_create", err_buf);
+            close_socket(client_info.socket_fd);
             close_socket(server_sock);
             return (void *)EXIT_FAILURE;
         }

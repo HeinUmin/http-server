@@ -3,12 +3,14 @@
 
 #include <arpa/inet.h>
 
+#define NR_LOG_LEVEL 6
+enum Log_level { TRACE, DEBUG, INFO, WARN, ERROR, FATAL };
+
 /**
  * @brief Log level strings
  *
  */
 extern const char *LEVEL_STRING[];
-extern const int MAX_LOG_LEVEL;
 
 /**
  * @brief Initialize log files
@@ -34,7 +36,7 @@ int close_log(void);
  * @param msg error message
  * @return int 0 on success
  */
-int error_log(long level, struct sockaddr_in addr, char *src, char *msg);
+int error_log(long level, const struct sockaddr_in *addr, char *src, char *msg);
 
 /**
  * @brief Log an access message
@@ -45,20 +47,9 @@ int error_log(long level, struct sockaddr_in addr, char *src, char *msg);
  * @param sent bytes sent
  * @return int 0 on success
  */
-int access_log(struct sockaddr_in addr, char *request, int code, ssize_t sent);
-
-/**
- * @brief Flush the error log
- *
- * @return int 0 on success
- */
-int flush_error_log(void);
-
-/**
- * @brief Flush the access log
- *
- * @return int 0 on success
- */
-int flush_access_log(void);
+int access_log(int code,
+               const struct sockaddr_in *addr,
+               char *request,
+               ssize_t sent);
 
 #endif

@@ -1,6 +1,5 @@
-#include "http_server.h"
-#include "https_server.h"
 #include "log.h"
+#include "server.h"
 
 #include <errno.h>
 #include <getopt.h>
@@ -12,8 +11,7 @@
 
 #define check_error(temp, src)                                                 \
     if (temp) {                                                                \
-        error_log(MAX_LOG_LEVEL - 1, (struct sockaddr_in){0}, src,             \
-                  strerror(temp));                                             \
+        error_log(NR_LOG_LEVEL - 1, NULL, src, strerror(temp));                \
         close_log();                                                           \
         return EXIT_FAILURE;                                                   \
     }
@@ -22,8 +20,8 @@ void usage(char *name) {
     printf("Usage: %s [options]\n", name);
     printf("Options:\n");
     printf("  -l, --log-level={");
-    for (int i = 0; i < MAX_LOG_LEVEL; i++) {
-        printf("%s%s", LEVEL_STRING[i], (i == MAX_LOG_LEVEL - 1) ? "}\n" : "|");
+    for (int i = 0; i < NR_LOG_LEVEL; i++) {
+        printf("%s%s", LEVEL_STRING[i], (i == NR_LOG_LEVEL - 1) ? "}\n" : "|");
     }
     printf("                           Set log level\n");
     printf("  -h, --help               Display this help message\n");
@@ -50,13 +48,13 @@ int main(int argc, char *argv[]) {
             usage(argv[0]);
             return EXIT_SUCCESS;
         case 'l':
-            for (temp = 0; temp < MAX_LOG_LEVEL; temp++) {
+            for (temp = 0; temp < NR_LOG_LEVEL; temp++) {
                 if (strcasecmp(optarg, LEVEL_STRING[temp]) == 0) {
                     log_level = temp;
                     break;
                 }
             }
-            if (temp == MAX_LOG_LEVEL) {
+            if (temp == NR_LOG_LEVEL) {
                 errno = EINVAL;
                 perror("getopt_long");
                 usage(argv[0]);
@@ -81,6 +79,6 @@ int main(int argc, char *argv[]) {
     temp = pthread_join(https_thread, &https_status);
     check_error(temp, "pthread_join");
 
-    return close_log();
+    return close_log() || http_status || https_status;
 }
 // NOLINTEND(concurrency-mt-unsafe)
