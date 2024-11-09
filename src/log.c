@@ -15,11 +15,11 @@
 #define ERR_BUF_SIZE 64
 #define TIME_BUF_SIZE 32
 #define access_log_error()                                                     \
-    {                                                                          \
+    do {                                                                       \
         strerror_r(errno, err_buf, ERR_BUF_SIZE);                              \
         error_log(ERROR, addr, "access_log", err_buf);                         \
         return EXIT_FAILURE;                                                   \
-    }
+    } while (0)
 
 const char *LEVEL_STRING[] = {"trace", "debug", "info",
                               "warn",  "error", "fatal"};

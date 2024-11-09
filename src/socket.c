@@ -11,9 +11,10 @@
 int close_socket(int socket_fd) {
     char err_buf[ERR_BUF_SIZE];
     int ret = close(socket_fd);
-    if (ret != 0) {
+    if (ret) {
         strerror_r(errno, err_buf, ERR_BUF_SIZE);
         error_log(FATAL, NULL, "close", err_buf);
+        return ret;
     }
     if (sprintf(err_buf, "Close socket %d", socket_fd) < 0) {
         strerror_r(errno, err_buf, ERR_BUF_SIZE);
@@ -21,7 +22,7 @@ int close_socket(int socket_fd) {
     } else {
         error_log(INFO, NULL, "close_socket", err_buf);
     }
-    return ret;
+    return 0;
 }
 
 int init_socket(struct sockaddr_in *sockaddr) {
