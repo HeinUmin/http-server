@@ -9,34 +9,24 @@
 #include <string.h>
 #include <unistd.h>
 
-#define ERR_BUF_SIZE 64
-
 volatile int exit_flag = 0;
 struct Thread_poll *thread_poll = NULL;
 
 void close_threads(void) {
-    int ret = 0;
-    char err_buf[ERR_BUF_SIZE];
     struct Thread_poll *cur_thread = NULL;
     exit_flag++;
     while (thread_poll) {
         cur_thread = thread_poll;
-        ret = pthread_kill(cur_thread->thread, SIGUSR1);
-        if (ret) {
-            strerror_r(ret, err_buf, ERR_BUF_SIZE);
-            error_log(WARN, NULL, "pthread_kill", err_buf);
-        }
+        pthread_kill(cur_thread->thread, SIGUSR1);
         thread_poll = thread_poll->next;
         free(cur_thread);
     }
 }
 
 void insert_thread(pthread_t thread) {
-    char err_buf[ERR_BUF_SIZE];
     struct Thread_poll *new_thread = malloc(sizeof(struct Thread_poll));
     if (!new_thread) {
-        strerror_r(errno, err_buf, ERR_BUF_SIZE);
-        error_log(FATAL, NULL, "malloc", err_buf);
+        log_errno(FATAL, NULL, "malloc", errno);
         close_threads();
         return;
     }
@@ -70,31 +60,17 @@ void signal_handler(int sig) {
 
 void *signal_thread(void *arg) {
     int sig = 0;
-    char err_buf[ERR_BUF_SIZE];
     struct sigaction act = {.sa_handler = signal_handler,
                             .sa_flags = SA_INTERRUPT,
                             .sa_mask = *(sigset_t *)arg};
 
-    if (sigaction(SIGUSR1, &act, NULL)) {
-        strerror_r(errno, err_buf, ERR_BUF_SIZE);
-        error_log(FATAL, NULL, "sigaction", err_buf);
-        exit_flag++;
-        return (void *)EXIT_FAILURE;
-    }
-
+    sigaction(SIGUSR1, &act, NULL);
     if (sigwait(&act.sa_mask, &sig)) {
-        strerror_r(errno, err_buf, ERR_BUF_SIZE);
-        error_log(FATAL, NULL, "sigwait", err_buf);
         exit_flag++;
+        log_errno(FATAL, NULL, "sigwait", errno);
         return (void *)EXIT_FAILURE;
     }
-    if (sprintf(err_buf, "Signal %d received", sig) < 0) {
-        strerror_r(errno, err_buf, ERR_BUF_SIZE);
-        error_log(WARN, NULL, "snprintf", err_buf);
-    } else {
-        error_log(INFO, NULL, "signal_thread", err_buf);
-    }
-
+    logi(NULL, "signal_thread", "Signal %d received", sig);
     close_threads();
     return (void *)EXIT_SUCCESS;
 }

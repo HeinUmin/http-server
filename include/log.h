@@ -36,20 +36,58 @@ int close_log(void);
  * @param msg error message
  * @return int 0 on success
  */
-int error_log(long level, const struct sockaddr_in *addr, char *src, char *msg);
+int error_log(long level,
+              const struct sockaddr_in *addr,
+              const char *src,
+              const char *msg);
 
 /**
  * @brief Log an access message
  *
+ * @param code response code
  * @param addr client address
  * @param request request string
- * @param code response code
  * @param sent bytes sent
  * @return int 0 on success
  */
 int access_log(int code,
                const struct sockaddr_in *addr,
-               char *request,
+               const char *request,
                ssize_t sent);
+
+/**
+ * @brief Log an error message with errno
+ *
+ * @param level message level
+ * @param addr client address
+ * @param src error source
+ * @param errnum error number
+ */
+void log_errno(int level,
+               const struct sockaddr_in *addr,
+               const char *src,
+               int errnum);
+
+/**
+ * @brief Log an error message with format
+ *
+ * @param level message level
+ * @param addr client address
+ * @param src error source
+ * @param format error message format
+ * @param ... error message arguments
+ */
+void log_format(int level,
+                const struct sockaddr_in *addr,
+                const char *src,
+                const char *format,
+                ...) __attribute__((format(printf, 4, 5)));
+
+#define logt(...) log_format(TRACE, __VA_ARGS__)
+#define logd(...) log_format(DEBUG, __VA_ARGS__)
+#define logi(...) log_format(INFO, __VA_ARGS__)
+#define logw(...) log_format(WARN, __VA_ARGS__)
+#define loge(...) log_format(ERROR, __VA_ARGS__)
+#define logf(...) log_format(FATAL, __VA_ARGS__)
 
 #endif
