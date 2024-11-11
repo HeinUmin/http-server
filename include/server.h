@@ -3,10 +3,10 @@
 
 #include <arpa/inet.h>
 
-struct Sockinfo {
+typedef struct {
     int socket_fd;
     struct sockaddr_in sockaddr;
-};
+} SockInfo;
 
 void *http_server(void *arg);
 void *https_server(void *arg);

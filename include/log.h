@@ -2,15 +2,11 @@
 #define LOG_H
 
 #include <arpa/inet.h>
-
 #define NR_LOG_LEVEL 6
-enum Log_level { TRACE, DEBUG, INFO, WARN, ERROR, FATAL };
 
-/**
- * @brief Log level strings
- *
- */
 extern const char *LEVEL_STRING[];
+extern __thread struct sockaddr_in sock;
+enum LogLevel { TRACE, DEBUG, INFO, WARN, ERROR, FATAL };
 
 /**
  * @brief Initialize log files
@@ -31,57 +27,41 @@ int close_log(void);
  * @brief Log an error message
  *
  * @param level message level
- * @param addr client address
  * @param src error source
  * @param msg error message
  * @return int 0 on success
  */
-int error_log(long level,
-              const struct sockaddr_in *addr,
-              const char *src,
-              const char *msg);
+int error_log(long level, const char *src, const char *msg);
 
 /**
  * @brief Log an access message
  *
  * @param code response code
- * @param addr client address
  * @param request request string
  * @param sent bytes sent
  * @return int 0 on success
  */
-int access_log(int code,
-               const struct sockaddr_in *addr,
-               const char *request,
-               ssize_t sent);
+int access_log(int code, const char *request, ssize_t sent);
 
 /**
  * @brief Log an error message with errno
  *
  * @param level message level
- * @param addr client address
  * @param src error source
  * @param errnum error number
  */
-void log_errno(int level,
-               const struct sockaddr_in *addr,
-               const char *src,
-               int errnum);
+void log_errno(int level, const char *src, int errnum);
 
 /**
  * @brief Log an error message with format
  *
  * @param level message level
- * @param addr client address
  * @param src error source
  * @param format error message format
  * @param ... error message arguments
  */
-void log_format(int level,
-                const struct sockaddr_in *addr,
-                const char *src,
-                const char *format,
-                ...) __attribute__((format(printf, 4, 5)));
+void log_format(int level, const char *src, const char *format, ...)
+    __attribute__((format(printf, 3, 4)));
 
 #define logt(...) log_format(TRACE, __VA_ARGS__)
 #define logd(...) log_format(DEBUG, __VA_ARGS__)

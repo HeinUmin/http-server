@@ -10,10 +10,10 @@
 #include <unistd.h>
 
 volatile int exit_flag = 0;
-struct Thread_poll *thread_poll = NULL;
+ThreadPoll *thread_poll = NULL;
 
 void close_threads(void) {
-    struct Thread_poll *cur_thread = NULL;
+    ThreadPoll *cur_thread = NULL;
     exit_flag++;
     while (thread_poll) {
         cur_thread = thread_poll;
@@ -24,9 +24,9 @@ void close_threads(void) {
 }
 
 void insert_thread(pthread_t thread) {
-    struct Thread_poll *new_thread = malloc(sizeof(struct Thread_poll));
+    ThreadPoll *new_thread = malloc(sizeof(ThreadPoll));
     if (!new_thread) {
-        log_errno(FATAL, NULL, "malloc", errno);
+        log_errno(FATAL, "malloc", errno);
         close_threads();
         return;
     }
@@ -36,8 +36,8 @@ void insert_thread(pthread_t thread) {
 }
 
 void remove_thread(pthread_t thread) {
-    struct Thread_poll *cur_thread = thread_poll;
-    struct Thread_poll *prev_thread = NULL;
+    ThreadPoll *prev_thread = NULL;
+    ThreadPoll *cur_thread = thread_poll;
     while (cur_thread) {
         if (cur_thread->thread == thread) {
             if (prev_thread) {
@@ -67,10 +67,10 @@ void *signal_thread(void *arg) {
     sigaction(SIGUSR1, &act, NULL);
     if (sigwait(&act.sa_mask, &sig)) {
         exit_flag++;
-        log_errno(FATAL, NULL, "sigwait", errno);
+        log_errno(FATAL, "sigwait", errno);
         return (void *)EXIT_FAILURE;
     }
-    logi(NULL, "signal_thread", "Signal %d received", sig);
+    logi("signal_thread", "Signal %d received", sig);
     close_threads();
     return (void *)EXIT_SUCCESS;
 }

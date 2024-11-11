@@ -3,10 +3,10 @@
 
 #include <pthread.h>
 
-struct Thread_poll {
+typedef struct tagThreadPoll {
     pthread_t thread;
-    struct Thread_poll *next;
-};
+    struct tagThreadPoll *next;
+} ThreadPoll;
 
 extern volatile int exit_flag;
 

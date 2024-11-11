@@ -25,7 +25,7 @@ void usage(char *name) {
 uint16_t get_port(char *port_str) {
     char *temp_ptr = NULL;
     long port = strtol(port_str, &temp_ptr, 10);
-    if (temp_ptr[0] != '\0') {
+    if (temp_ptr[0]) {
         perror("strtol");
         return -1;
     }
@@ -45,14 +45,12 @@ int main(int argc, char *argv[]) {
     void *handler_status = NULL, *http_status = NULL, *https_status = NULL;
 
     int opt = 0, temp = 0;
-    struct option long_options[] = {
-        {"help", no_argument, NULL, 'h'},
-        {"http-port", required_argument, NULL, 'p'},
-        {"https-port", required_argument, NULL, 's'},
-        {"log-level", required_argument, NULL, 'l'}};
+    struct option longopts[] = {{"help", no_argument, NULL, 'h'},
+                                {"http-port", required_argument, NULL, 'p'},
+                                {"https-port", required_argument, NULL, 's'},
+                                {"log-level", required_argument, NULL, 'l'}};
     // NOLINTNEXTLINE(concurrency-mt-unsafe)
-    while ((opt = getopt_long(argc, argv, "hp:s:l:", long_options, NULL)) !=
-           -1) {
+    while ((opt = getopt_long(argc, argv, "hp:s:l:", longopts, NULL)) != -1) {
         switch (opt) {
         case 'h':
             usage(argv[0]);
