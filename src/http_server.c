@@ -2,6 +2,7 @@
 #include "server.h"
 #include "sighandler.h"
 #include "socket.h"
+#include "utils.h"
 
 #include <errno.h>
 #include <pthread.h>
@@ -11,12 +12,27 @@
 #include <string.h>
 
 void *handle_request(void *arg) {
+    ssize_t readret = 0;
+    char buf[HTTP_BUF_SIZE];
+    Request *request = NULL;
     int socket_fd = (*(SockInfo *)arg).socket_fd;
     sock = (*(SockInfo *)arg).sockaddr;
     insert_thread(pthread_self());
     pthread_detach(pthread_self());
     logd("handle_request", "Handle request for socket %d", socket_fd);
-    // TODO: Implement handle_request
+    memset(buf, 0, HTTP_BUF_SIZE);
+    while ((readret = recv(socket_fd, buf, HTTP_BUF_SIZE, 0)) > 0) {
+        logd("recv", "Received %ld bytes", readret);
+        logt("recv", "%s", buf);
+        request = parse_request(buf);
+        if (!request) {
+            // TODO: Bad request
+        }
+        // TODO: Implement handle_request
+    }
+
+    if (readret < 0) { log_errno(ERROR, "recv", errno); }
+    close_socket(socket_fd);
     remove_thread(pthread_self());
     return (void *)EXIT_SUCCESS;
 }

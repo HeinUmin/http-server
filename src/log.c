@@ -3,8 +3,9 @@
  */
 
 #include "log.h"
+#include "utils.h"
+
 #include <errno.h>
-#include <netinet/in.h>
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -14,7 +15,6 @@
 #include <unistd.h>
 
 #define ERR_BUF_SIZE 64
-#define TIMESTRLEN 32
 
 static FILE *access_log_file = NULL;
 static FILE *error_log_file = NULL;
@@ -23,16 +23,6 @@ static pthread_mutex_t error_log_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t access_log_mutex = PTHREAD_MUTEX_INITIALIZER;
 const char *LEVEL_STRING[] = {"trace", "debug", "info",
                               "warn",  "error", "fatal"};
-__thread struct sockaddr_in sock = {0};
-
-static inline size_t get_time(char *time_str, const char *format) {
-    size_t ret = 0;
-    struct tm timeinfo;
-    time_t now = time(NULL);
-    ret = strftime(time_str, TIMESTRLEN, format, localtime_r(&now, &timeinfo));
-    if (!ret) { time_str[0] = '\0'; }
-    return ret;
-}
 
 int init_log(long level) {
     if ((level >= NR_LOG_LEVEL || level < 0) ||

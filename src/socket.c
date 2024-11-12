@@ -1,7 +1,8 @@
 #include "socket.h"
 #include "log.h"
+#include "utils.h"
+
 #include <errno.h>
-#include <netinet/in.h>
 #include <unistd.h>
 
 int close_socket(int socket_fd) {

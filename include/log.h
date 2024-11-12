@@ -5,7 +5,6 @@
 #define NR_LOG_LEVEL 6
 
 extern const char *LEVEL_STRING[];
-extern __thread struct sockaddr_in sock;
 enum LogLevel { TRACE, DEBUG, INFO, WARN, ERROR, FATAL };
 
 /**

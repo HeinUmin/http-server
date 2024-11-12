@@ -12,10 +12,11 @@
 #include <unistd.h>
 
 void usage(char *name) {
+    int i = 0;
     printf("Usage: %s [options]\n", name);
     printf("Options:\n");
     printf("  -l, --log-level={");
-    for (int i = 0; i < NR_LOG_LEVEL; i++) {
+    for (i = 0; i < NR_LOG_LEVEL; i++) {
         printf("%s%s", LEVEL_STRING[i], (i == NR_LOG_LEVEL - 1) ? "}\n" : "|");
     }
     printf("                           Set log level\n");
