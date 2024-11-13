@@ -15,8 +15,9 @@ void *handle_request(void *arg) {
     ssize_t readret = 0;
     char buf[HTTP_BUF_SIZE];
     Request *request = NULL;
-    int socket_fd = (*(SockInfo *)arg).socket_fd;
-    sock = (*(SockInfo *)arg).sockaddr;
+    int socket_fd = ((SockInfo *)arg)->socket_fd;
+    sock = ((SockInfo *)arg)->sockaddr;
+    free(arg);
     insert_thread(pthread_self());
     pthread_detach(pthread_self());
     logd("handle_request", "Handle request for socket %d", socket_fd);
@@ -31,8 +32,6 @@ void *handle_request(void *arg) {
         // TODO: Implement handle_request
     }
 
-    if (readret < 0) { log_errno(ERROR, "recv", errno); }
-    close_socket(socket_fd);
     remove_thread(pthread_self());
     return (void *)EXIT_SUCCESS;
 }
@@ -40,13 +39,13 @@ void *handle_request(void *arg) {
 void *http_server(void *arg) {
     int server_sock = 0;
     pthread_t thread = 0;
-    SockInfo sockinfo = {.socket_fd = 0,
-                         .sockaddr = {.sin_family = AF_INET,
-                                      .sin_port = htons(*(uint16_t *)arg),
-                                      .sin_addr.s_addr = htonl(INADDR_ANY)}};
+    SockInfo *sockinfo = NULL;
+    struct sockaddr_in sockaddr = {.sin_family = AF_INET,
+                                   .sin_port = htons(*(uint16_t *)arg),
+                                   .sin_addr.s_addr = htonl(INADDR_ANY)};
 
     insert_thread(pthread_self());
-    server_sock = init_socket(&sockinfo.sockaddr);
+    server_sock = init_socket(&sockaddr);
     if (server_sock < 0) {
         if (raise(SIGTERM)) { log_errno(FATAL, "raise", errno); }
         return (void *)EXIT_FAILURE;
@@ -58,13 +57,23 @@ void *http_server(void *arg) {
             close_socket(server_sock);
             break;
         }
-        sockinfo.socket_fd = connect_socket(server_sock, &sockinfo.sockaddr);
-        if (exit_flag) { break; }
-        if (sockinfo.socket_fd < 0) {
+        if (!(sockinfo = malloc(sizeof(SockInfo)))) {
+            log_errno(FATAL, "malloc", errno);
+            if (raise(SIGTERM)) { log_errno(FATAL, "raise", errno); }
+            close_socket(server_sock);
+            break;
+        }
+        sockinfo->socket_fd = connect_socket(server_sock, &sockinfo->sockaddr);
+        if (exit_flag) {
+            free(sockinfo);
+            break;
+        }
+        if (sockinfo->socket_fd < 0) {
+            free(sockinfo);
             if (raise(SIGTERM)) { log_errno(FATAL, "raise", errno); }
             return (void *)EXIT_FAILURE;
         }
-        pthread_create(&thread, NULL, handle_request, &sockinfo);
+        pthread_create(&thread, NULL, handle_request, (void *)sockinfo);
     }
     remove_thread(pthread_self());
     return (void *)EXIT_SUCCESS;
