@@ -18,13 +18,13 @@
 
 static FILE *access_log_file = NULL;
 static FILE *error_log_file = NULL;
-static long log_level = 0;
+static LogLevel log_level = 0;
 static pthread_mutex_t error_log_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t access_log_mutex = PTHREAD_MUTEX_INITIALIZER;
 const char *LEVEL_STRING[] = {"trace", "debug", "info",
                               "warn",  "error", "fatal"};
 
-int init_log(long level) {
+int init_log(LogLevel level) {
     if ((level >= NR_LOG_LEVEL || level < 0) ||
         (access_log_file || error_log_file)) {
         return EXIT_FAILURE;
@@ -50,7 +50,7 @@ int close_log(void) {
     return EXIT_SUCCESS;
 }
 
-int error_log(long level, const char *src, const char *msg) {
+int error_log(LogLevel level, const char *src, const char *msg) {
     char time_str[TIMESTRLEN];
     char ip_str[INET_ADDRSTRLEN];
 
@@ -101,7 +101,7 @@ int access_log(int code, const char *request, ssize_t sent) {
     return EXIT_SUCCESS;
 }
 
-void log_errno(int level, const char *src, int errnum) {
+void log_errno(LogLevel level, const char *src, int errnum) {
     char err_buf[ERR_BUF_SIZE];
     strerror_r(errnum, err_buf, ERR_BUF_SIZE);
     error_log(level, src, err_buf);

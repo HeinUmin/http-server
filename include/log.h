@@ -5,7 +5,7 @@
 #define NR_LOG_LEVEL 6
 
 extern const char *LEVEL_STRING[];
-enum LogLevel { TRACE, DEBUG, INFO, WARN, ERROR, FATAL };
+typedef enum { TRACE, DEBUG, INFO, WARN, ERROR, FATAL } LogLevel;
 
 /**
  * @brief Initialize log files
@@ -13,7 +13,7 @@ enum LogLevel { TRACE, DEBUG, INFO, WARN, ERROR, FATAL };
  * @param level Program log level
  * @return int 0 on success
  */
-int init_log(long level);
+int init_log(LogLevel level);
 
 /**
  * @brief Close log files
@@ -30,7 +30,7 @@ int close_log(void);
  * @param msg error message
  * @return int 0 on success
  */
-int error_log(long level, const char *src, const char *msg);
+int error_log(LogLevel level, const char *src, const char *msg);
 
 /**
  * @brief Log an access message
@@ -49,7 +49,7 @@ int access_log(int code, const char *request, ssize_t sent);
  * @param src error source
  * @param errnum error number
  */
-void log_errno(int level, const char *src, int errnum);
+void log_errno(LogLevel level, const char *src, int errnum);
 
 /**
  * @brief Log an error message with format

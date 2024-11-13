@@ -40,7 +40,7 @@ uint16_t get_port(char *port_str) {
 
 int main(int argc, char *argv[]) {
     sigset_t sigset;
-    long log_level = 2;
+    LogLevel log_level = INFO;
     uint16_t http_port = 80, https_port = 443;
     pthread_t handler_thread = 0, http_thread = 0, https_thread = 0;
     void *handler_status = NULL, *http_status = NULL, *https_status = NULL;
