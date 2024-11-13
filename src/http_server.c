@@ -1,4 +1,5 @@
 #include "log.h"
+#include "parser.h"
 #include "server.h"
 #include "sighandler.h"
 #include "socket.h"
@@ -12,9 +13,9 @@
 #include <string.h>
 
 void *handle_request(void *arg) {
-    ssize_t readret = 0;
     char buf[HTTP_BUF_SIZE];
-    Request *request = NULL;
+    Request request = {0};
+    Response response = OK;
     int socket_fd = ((SockInfo *)arg)->socket_fd;
     sock = ((SockInfo *)arg)->sockaddr;
     free(arg);
@@ -22,16 +23,13 @@ void *handle_request(void *arg) {
     pthread_detach(pthread_self());
     logd("handle_request", "Handle request for socket %d", socket_fd);
     memset(buf, 0, HTTP_BUF_SIZE);
-    while ((readret = recv(socket_fd, buf, HTTP_BUF_SIZE, 0)) > 0) {
-        logd("recv", "Received %ld bytes", readret);
-        logt("recv", "%s", buf);
-        request = parse_request(buf);
-        if (!request) {
-            // TODO: Bad request
-        }
-        // TODO: Implement handle_request
+    while (recv_message(socket_fd, buf, HTTP_BUF_SIZE) > 0) {
+        response = parse_request(buf, &request);
+        if (response == OK) { response = MOVED; }
+        // TODO: Send response
+        if (request.connection == 0) { break; }
     }
-
+    close_socket(socket_fd);
     remove_thread(pthread_self());
     return (void *)EXIT_SUCCESS;
 }
@@ -57,7 +55,8 @@ void *http_server(void *arg) {
             close_socket(server_sock);
             break;
         }
-        if (!(sockinfo = malloc(sizeof(SockInfo)))) {
+        sockinfo = malloc(sizeof(SockInfo));
+        if (!sockinfo) {
             log_errno(FATAL, "malloc", errno);
             if (raise(SIGTERM)) { log_errno(FATAL, "raise", errno); }
             close_socket(server_sock);
