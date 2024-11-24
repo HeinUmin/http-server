@@ -6,6 +6,7 @@
 #include "utils.h"
 
 #include <errno.h>
+#include <openssl/types.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdint.h>
@@ -13,7 +14,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int send_error(int socket_fd, Request *request, Response response) {
+static int
+send_error(int socket_fd, Request *request, Response response, SSL *ssl) {
     int err = 0;
     char buf[HTTP_BUF_SIZE];
     char time_str[TIMESTRLEN];
@@ -36,11 +38,12 @@ static int send_error(int socket_fd, Request *request, Response response) {
         close_socket(socket_fd);
         return -1;
     }
-    if (send_message(socket_fd, buf, strlen(buf)) < 0) { return -1; }
+    if (send_message(socket_fd, buf, (int)strlen(buf), ssl) < 0) { return -1; }
     return 0;
 }
 
-static int send_file(int socket_fd, Request *request, FileInfo *fileinfo) {
+static int
+send_file(int socket_fd, Request *request, FileInfo *fileinfo, SSL *ssl) {
     FILE *fp = NULL;
     int status = 0;
     size_t sent = 0, readret = 0;
@@ -70,7 +73,7 @@ static int send_file(int socket_fd, Request *request, FileInfo *fileinfo) {
         loge("send_file", "Buffer overflow");
         return 1;
     }
-    sendret = send_message(socket_fd, buf, strlen(buf));
+    sendret = send_message(socket_fd, buf, (int)strlen(buf), ssl);
     if (sendret <= 0) { return -1; }
     if (request->http_method == HEAD) { return 0; }
 
@@ -89,7 +92,7 @@ static int send_file(int socket_fd, Request *request, FileInfo *fileinfo) {
             status = -1;
             break;
         }
-        sendret = send_message(socket_fd, buf, readret);
+        sendret = send_message(socket_fd, buf, (int)readret, ssl);
         if (sendret < 0) {
             status = -1;
             break;
@@ -116,18 +119,19 @@ void *handle_request(void *arg) {
     int status = EXIT_SUCCESS;
     int https = ((SockInfo *)arg)->https;
     int socket_fd = ((SockInfo *)arg)->socket_fd;
+    SSL *ssl = https ? ((SockInfo *)arg)->ssl : NULL;
     sock = ((SockInfo *)arg)->sockaddr;
     free(arg);
     insert_thread(pthread_self());
     pthread_detach(pthread_self());
     logd("handle_request", "Handle request for socket %d", socket_fd);
-    while (recv_message(socket_fd, buf, HTTP_BUF_SIZE) > 0) {
+    while (recv_message(socket_fd, buf, HTTP_BUF_SIZE, ssl) > 0) {
         response = parse_request(buf, &request, https);
         if (!response) {
             response = parse_uri(&request, &fileinfo);
             if (!response) {
                 // TODO: Handle PARTIAL_CONTENT
-                ret = send_file(socket_fd, &request, &fileinfo);
+                ret = send_file(socket_fd, &request, &fileinfo, ssl);
                 if (ret < 0) {
                     status = EXIT_FAILURE;
                     break;
@@ -135,7 +139,7 @@ void *handle_request(void *arg) {
                 if (ret > 0) { response = SERVER_ERROR; }
             }
         }
-        ret = send_error(socket_fd, &request, response);
+        ret = send_error(socket_fd, &request, response, ssl);
         if (ret < 0) {
             status = EXIT_FAILURE;
             break;
@@ -158,11 +162,20 @@ void *server(void *arg) {
     int server_sock = 0;
     pthread_t thread = 0;
     SockInfo *sockinfo = NULL;
+    SSL_CTX *ctx = NULL;
+    SSL *ssl = NULL;
     struct sockaddr_in sockaddr = {.sin_family = AF_INET,
                                    .sin_port = htons(port[https]),
                                    .sin_addr.s_addr = htonl(INADDR_ANY)};
 
     insert_thread(pthread_self());
+    if (https) {
+        ctx = init_ssl();
+        if (!ctx) {
+            if (raise(SIGTERM)) { log_errno(FATAL, "raise", errno); }
+            return (void *)EXIT_FAILURE;
+        }
+    }
     server_sock = init_socket(&sockaddr);
     if (server_sock < 0) {
         if (raise(SIGTERM)) { log_errno(FATAL, "raise", errno); }
@@ -172,6 +185,7 @@ void *server(void *arg) {
 
     while (1) {
         if (exit_flag) {
+            SSL_CTX_free(ctx);
             close_socket(server_sock);
             break;
         }
@@ -185,6 +199,7 @@ void *server(void *arg) {
         sockinfo->https = https;
         sockinfo->socket_fd = connect_socket(server_sock, &sockinfo->sockaddr);
         if (exit_flag) {
+            SSL_CTX_free(ctx);
             free(sockinfo);
             break;
         }
@@ -192,6 +207,18 @@ void *server(void *arg) {
             free(sockinfo);
             if (raise(SIGTERM)) { log_errno(FATAL, "raise", errno); }
             return (void *)EXIT_FAILURE;
+        }
+        if (https) {
+            // TODO: Refine SSL
+            ssl = connect_ssl(sockinfo->socket_fd, ctx);
+            if (!ssl) {
+                free(sockinfo);
+                if (raise(SIGTERM)) { log_errno(FATAL, "raise", errno); }
+                return (void *)EXIT_FAILURE;
+            } else {
+                sockinfo->ssl = ssl;
+                ssl = NULL;
+            }
         }
         pthread_create(&thread, NULL, handle_request, (void *)sockinfo);
     }
