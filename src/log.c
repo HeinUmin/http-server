@@ -63,11 +63,11 @@ int error_log(LogLevel level, const char *src, const char *msg) {
         error_log(ERROR, "error_log", "Invalid log source or message");
         return EXIT_FAILURE;
     }
-    get_time(time_str, "%c");
+    get_time(time_str, "%c", 0);
     inet_ntop(AF_INET, &sock.sin_addr, ip_str, INET_ADDRSTRLEN);
 
     pthread_mutex_lock(&error_log_mutex);
-    if (fprintf(error_log_file, "[%s] [%s] [pid %d:tid %lu] [%s:%d] %s:  %s\n",
+    if (fprintf(error_log_file, "[%s] [%s] [pid %d:tid %lu] [%s:%hu] %s:  %s\n",
                 time_str, LEVEL_STRING[level], getpid(), pthread_self(), ip_str,
                 ntohs(sock.sin_port), src, msg) < 0 ||
         fflush(error_log_file)) {
@@ -81,16 +81,16 @@ int error_log(LogLevel level, const char *src, const char *msg) {
     return EXIT_SUCCESS;
 }
 
-int access_log(int code, const char *request, ssize_t sent) {
+int access_log(int code, const char *request, size_t sent) {
     char ip_str[INET_ADDRSTRLEN];
     char time_str[TIMESTRLEN];
 
     if (!request) { request = ""; }
-    get_time(time_str, "%d/%b/%Y:%H:%M:%S %z");
+    get_time(time_str, "%d/%b/%Y:%H:%M:%S %z", 0);
     inet_ntop(AF_INET, &sock.sin_addr, ip_str, INET_ADDRSTRLEN);
 
     pthread_mutex_lock(&access_log_mutex);
-    if (fprintf(access_log_file, "%s - - [%s] \"%s\" %d %ld\n", ip_str,
+    if (fprintf(access_log_file, "%s - - [%s] \"%s\" %d %zd\n", ip_str,
                 time_str, request, code, sent) < 0 ||
         fflush(access_log_file)) {
         pthread_mutex_unlock(&access_log_mutex);

@@ -4,11 +4,11 @@
 #include <arpa/inet.h>
 
 typedef struct {
+    int https;
     int socket_fd;
     struct sockaddr_in sockaddr;
 } SockInfo;
 
-void *http_server(void *arg);
-void *https_server(void *arg);
+void *server(void *arg);
 
 #endif

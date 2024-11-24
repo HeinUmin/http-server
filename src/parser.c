@@ -1,9 +1,16 @@
 #include "parser.h"
+#include "utils.h"
+
+#include <ctype.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <time.h>
 
 const char *HTTP_METHOD_STRING[] = {"GET", "HEAD"};
 const char *RESPONSE_STRING[] = {"OK",
+                                 "Partial Content",
                                  "Moved Permanently",
                                  "Bad Request",
                                  "Forbidden",
@@ -12,18 +19,72 @@ const char *RESPONSE_STRING[] = {"OK",
                                  "Internal Server Error",
                                  "Not Implemented",
                                  "HTTP Version Not Supported"};
-const int RESPONSE_CODE[] = {200, 301, 400, 403, 404, 414, 500, 501, 505};
+const int RESPONSE_CODE[] = {200, 206, 301, 400, 403, 404, 414, 500, 501, 505};
 
-Response parse_request(char *buf, Request *request) {
+static size_t url_decode(char *str) {
+    char hex[3] = {0};
+    char *dest = str;
+    char *data = str;
+    size_t len = strlen(str);
+
+    while (len--) {
+        switch (*data) {
+        case '+':
+            *dest = ' ';
+            break;
+        case '%':
+            if (len >= 2 && isxdigit(*(data + 1)) && isxdigit(*(data + 2))) {
+                hex[0] = *(data + 1), hex[1] = *(data + 2);
+                *dest = (char)strtol(hex, NULL, 16);
+                data += 2, len -= 2;
+            } else {
+                *dest = *data;
+            }
+            break;
+        case '?':
+            *dest = '\0';
+            return dest - str;
+        default:
+            *dest = *data;
+        }
+        data++;
+        dest++;
+    }
+    *dest = '\0';
+    return dest - str;
+}
+
+static inline void get_mime(char *filename, char *filetype) {
+    if (strstr(filename, ".html")) {
+        strcpy(filetype, "text/html");
+    } else if (strstr(filename, ".gif")) {
+        strcpy(filetype, "image/gif");
+    } else if (strstr(filename, ".png")) {
+        strcpy(filetype, "image/png");
+    } else if (strstr(filename, ".css")) {
+        strcpy(filetype, "text/css");
+    } else if (strstr(filename, ".jpg") || strstr(filename, ".jpeg")) {
+        strcpy(filetype, "image/jpeg");
+    } else {
+        strcpy(filetype, "application/octet-stream");
+    }
+}
+
+Response parse_request(char *buf, Request *request, int https) {
     int temp = 0;
-    char *line = NULL, *token = NULL;
+    char request_line[HTTP_URI_SIZE + 32] = {0};  // To avoid buffer overflow
+    char *line = NULL, *token = NULL, *tmpptr = NULL;
     char *lineptr = NULL, *tokptr = NULL;
+    if (!buf || !request) { return SERVER_ERROR; }
+    *request = (Request){0};
 
     // Parse request line
     line = strtok_r(buf, "\r\n", &lineptr);
     if (!line) { return BAD_REQUEST; }
+    if (strlen(line) >= HTTP_URI_SIZE + 32) { return BAD_REQUEST; }
+    strlcpy(request_line, line, HTTP_URI_SIZE + 32);
     // Parse request method
-    token = strtok_r(line, " ", &tokptr);
+    token = strtok_r(request_line, " ", &tokptr);
     if (!token) { return BAD_REQUEST; }
     for (temp = 0; temp < NR_HTTP_METHOD; temp++) {
         if (strcmp(token, HTTP_METHOD_STRING[temp]) == 0) {
@@ -35,6 +96,19 @@ Response parse_request(char *buf, Request *request) {
     // Parse request URI
     token = strtok_r(NULL, " ", &tokptr);
     if (!token) { return BAD_REQUEST; }
+    if (token[0] != '/') {
+        // Parse http host
+        if (strncasecmp(token, "http://", 7) == 0) {
+            token += 7;
+        } else if (strncasecmp(token, "https://", 8) == 0) {
+            token += 8;
+        }
+        tmpptr = strchr(token, '/');
+        if (!tmpptr) { return BAD_REQUEST; }
+        if (tmpptr - token >= HTTP_URI_SIZE) { return URI_LONG; }
+        strlcpy(request->http_host, token, tmpptr - token + 1);
+        token = tmpptr;
+    }
     if (strlen(token) >= HTTP_URI_SIZE) { return URI_LONG; }
     strlcpy(request->http_uri, token, HTTP_URI_SIZE);
     // Parse request version
@@ -50,22 +124,67 @@ Response parse_request(char *buf, Request *request) {
         return NOT_SUPPORTED;
     }
     // Check request line
-    if ((token = strtok_r(NULL, " ", &tokptr))) { return BAD_REQUEST; }
+    if (strtok_r(NULL, " ", &tokptr)) { return BAD_REQUEST; }
 
     // Parse request headers
+    temp = 0;
     while ((line = strtok_r(NULL, "\r\n", &lineptr))) {
         token = strtok_r(line, ":", &tokptr);
         if (!token) { return BAD_REQUEST; }
-        while (tokptr || tokptr[0] == ' ' || tokptr[0] == '\t') { tokptr++; }
-        if (!tokptr) { return BAD_REQUEST; }
-        if (strcasecmp(token, "Connection") != 0) { continue; }
-        if (strcasecmp(tokptr, "close") == 0) {
-            request->connection = 0;
-        } else if (strcasecmp(tokptr, "keep-alive") == 0) {
-            request->connection = 1;
+        if (strcasecmp(token, "Connection") == 0) {
+            // Parse Connection header
+            token = strtok_r(NULL, ", \t", &tokptr);
+            if (!token) { continue; }
+            if (strcasecmp(token, "close") == 0) {
+                request->connection = 0;
+            } else if (strcasecmp(token, "keep-alive") == 0) {
+                request->connection = 1;
+            }
+        } else if (strcasecmp(token, "Host") == 0) {
+            // Parse Host header
+            if (temp++) { return BAD_REQUEST; }
+            if (request->http_host[0] != '\0') { continue; }
+            token = strtok_r(NULL, " \t", &tokptr);
+            if (!token) { continue; }
+            if (strncasecmp(token, "http://", 7) == 0) {
+                token += 7;
+            } else if (strncasecmp(token, "https://", 8) == 0) {
+                token += 8;
+            }
+            if (strlen(token) >= HTTP_URI_SIZE) { return URI_LONG; }
+            strlcpy(request->http_host, token, HTTP_URI_SIZE);
+            if (strtok_r(NULL, " \t", &tokptr)) { return BAD_REQUEST; }
         }
     }
-    return 0;
+    // Check request headers
+    if (request->http_host[0] == '\0') {
+        if (!request->http_version) {
+            if (sprintf(request->http_host, "localhost:%hu", port[https]) < 0) {
+                return SERVER_ERROR;
+            }
+        } else {
+            return BAD_REQUEST;
+        }
+    }
+    return (https || !port[1 - https]) ? OK : MOVED;
 }
 
-#undef return_error
+Response parse_uri(const Request *request, FileInfo *fileinfo) {
+    struct stat sbuf = {0};
+    if (!request || !fileinfo ||
+        sprintf(fileinfo->path, "dir%s", request->http_uri) < 0) {
+        return SERVER_ERROR;
+    }
+    url_decode(fileinfo->path);
+    if (stat(fileinfo->path, &sbuf) < 0) { return NOT_FOUND; }
+    if (S_ISDIR(sbuf.st_mode)) {
+        strcat(fileinfo->path, "/index.html");
+        if (stat(fileinfo->path, &sbuf) < 0) { return NOT_FOUND; }
+    }
+    if (!S_ISREG(sbuf.st_mode) || !(S_IRUSR & sbuf.st_mode)) {
+        return FORBIDDEN;
+    }
+    get_mime(fileinfo->path, fileinfo->type);
+    fileinfo->size = sbuf.st_size;
+    return OK;
+}

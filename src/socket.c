@@ -3,6 +3,7 @@
 #include "utils.h"
 
 #include <errno.h>
+#include <string.h>
 #include <unistd.h>
 
 int close_socket(int socket_fd) {
@@ -83,13 +84,29 @@ int connect_socket(int socket_fd, struct sockaddr_in *sockaddr) {
 }
 
 ssize_t recv_message(int socket_fd, char *buf, size_t len) {
-    ssize_t ret = recv(socket_fd, buf, len, 0);
+    ssize_t ret = 0;
+    memset(buf, 0, len);
+    ret = recv(socket_fd, buf, len - 1, 0);
     if (ret < 0) {
         log_errno(WARN, "recv", errno);
+        close_socket(socket_fd);
     } else if (ret == 0) {
         close_socket(socket_fd);
     } else {
         logt("recv_msg", "%s", buf);
+    }
+    return ret;
+}
+
+ssize_t send_message(int socket_fd, const char *buf, size_t len) {
+    ssize_t ret = send(socket_fd, buf, len, 0);
+    if (ret < 0) {
+        log_errno(WARN, "send", errno);
+        close_socket(socket_fd);
+    } else if (ret == 0) {
+        close_socket(socket_fd);
+    } else {
+        logt("send_msg", "%s", buf);
     }
     return ret;
 }

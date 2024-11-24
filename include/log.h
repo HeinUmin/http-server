@@ -40,7 +40,7 @@ int error_log(LogLevel level, const char *src, const char *msg);
  * @param sent bytes sent
  * @return int 0 on success
  */
-int access_log(int code, const char *request, ssize_t sent);
+int access_log(int code, const char *request, size_t sent);
 
 /**
  * @brief Log an error message with errno
