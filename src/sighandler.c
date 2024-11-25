@@ -65,6 +65,7 @@ void *signal_thread(void *arg) {
                             .sa_mask = *(sigset_t *)arg};
 
     sigaction(SIGUSR1, &act, NULL);
+    sigaction(SIGPIPE, SIG_IGN, NULL);
     if (sigwait(&act.sa_mask, &sig)) {
         exit_flag++;
         log_errno(FATAL, "sigwait", errno);

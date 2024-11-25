@@ -59,28 +59,17 @@ int init_socket(struct sockaddr_in *sockaddr) {
 }
 
 int connect_socket(int socket_fd, struct sockaddr_in *sockaddr) {
-    int client_sock = 0;
     socklen_t len = sizeof(struct sockaddr_in);
-    struct timeval timeout = {3, 0};
-
-    // Accept connection
-    client_sock = accept(socket_fd, (struct sockaddr *)sockaddr, &len);
+    int client_sock = accept(socket_fd, (struct sockaddr *)sockaddr, &len);
+    while (errno == EAGAIN) {
+        logw("connect_socket", "Retry accept");
+        client_sock = accept(socket_fd, (struct sockaddr *)sockaddr, &len);
+    }
     if (client_sock < 0) {
-        log_errno(FATAL, "accept", errno);
-        close_socket(socket_fd);
+        log_errno(ERROR, "accept", errno);
         return -1;
     }
     logd("connect_socket", "Accept socket %d", client_sock);
-
-    // Set socket timeout
-    if (setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout,
-                   sizeof(struct timeval)) ||
-        setsockopt(socket_fd, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout,
-                   sizeof(struct timeval))) {
-        log_errno(WARN, "setsockopt", errno);
-    } else {
-        logd("connect_socket", "Set timeout to socket %d", client_sock);
-    }
     return client_sock;
 }
 
@@ -134,7 +123,7 @@ SSL_CTX *init_ssl(void) {
         logf("init_ssl", "%s", ERR_error_string(ERR_get_error(), err_buf));
         return NULL;
     }
-    SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);
+    SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
     // Load keys
     if (SSL_CTX_use_certificate_file(ctx, "keys/cnlab.cert",
                                      SSL_FILETYPE_PEM) <= 0) {
@@ -178,7 +167,7 @@ SSL *connect_ssl(int socket_fd, SSL_CTX *ctx) {
     SSL_set_fd(ssl, socket_fd);
     if (SSL_accept(ssl) < 0) {
         loge("connect_ssl", "%s", ERR_error_string(ERR_get_error(), err_buf));
-        close_ssl(ssl, socket_fd);
+        SSL_free(ssl);
         close_socket(socket_fd);
         return NULL;
     }

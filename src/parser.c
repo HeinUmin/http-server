@@ -159,13 +159,14 @@ Response parse_request(char *buf, Request *request, int https) {
     // Check request headers
     if (request->http_host[0] == '\0') {
         if (!request->http_version) {
-            if (sprintf(request->http_host, "localhost:%hu", port[https]) < 0) {
+            if (sprintf(request->http_host, "localhost") < 0) {
                 return SERVER_ERROR;
             }
         } else {
             return BAD_REQUEST;
         }
     }
+    strtok_r(request->http_host, ":", &tmpptr);
     return (https || !port[1 - https]) ? OK : MOVED;
 }
 

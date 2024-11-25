@@ -26,8 +26,8 @@ send_error(int socket_fd, Request *request, Response response, SSL *ssl) {
                     RESPONSE_STRING[response]) < 0;
     if (response == MOVED) {
         err |= snprintf(buf + strlen(buf), HTTP_BUF_SIZE - strlen(buf),
-                        "Location: https://%s%s\r\n", request->http_host,
-                        request->http_uri) < 0;
+                        "Location: https://%s:%hu%s\r\n", request->http_host,
+                        port[1], request->http_uri) < 0;
     }
     err |= snprintf(buf + strlen(buf), HTTP_BUF_SIZE - strlen(buf),
                     "Content-Length: 0\r\n") < 0;
@@ -213,8 +213,7 @@ void *server(void *arg) {
             ssl = connect_ssl(sockinfo->socket_fd, ctx);
             if (!ssl) {
                 free(sockinfo);
-                if (raise(SIGTERM)) { log_errno(FATAL, "raise", errno); }
-                return (void *)EXIT_FAILURE;
+                continue;
             } else {
                 sockinfo->ssl = ssl;
                 ssl = NULL;
