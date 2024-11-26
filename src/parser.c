@@ -16,10 +16,12 @@ const char *RESPONSE_STRING[] = {"OK",
                                  "Forbidden",
                                  "Not Found",
                                  "URI Too Long",
+                                 "Range Not Satisfiable",
                                  "Internal Server Error",
                                  "Not Implemented",
                                  "HTTP Version Not Supported"};
-const int RESPONSE_CODE[] = {200, 206, 301, 400, 403, 404, 414, 500, 501, 505};
+const int RESPONSE_CODE[] = {200, 206, 301, 400, 403, 404,
+                             414, 416, 500, 501, 505};
 
 static size_t url_decode(char *str) {
     char hex[3] = {0};
@@ -65,6 +67,8 @@ static inline void get_mime(char *filename, char *filetype) {
         strcpy(filetype, "text/css");
     } else if (strstr(filename, ".jpg") || strstr(filename, ".jpeg")) {
         strcpy(filetype, "image/jpeg");
+    } else if (strstr(filename, ".mp4")) {
+        strcpy(filetype, "video/mp4");
     } else {
         strcpy(filetype, "application/octet-stream");
     }
@@ -154,6 +158,23 @@ Response parse_request(char *buf, Request *request, int https) {
             if (strlen(token) >= HTTP_URI_SIZE) { return URI_LONG; }
             strlcpy(request->http_host, token, HTTP_URI_SIZE);
             if (strtok_r(NULL, " \t", &tokptr)) { return BAD_REQUEST; }
+        } else if (strcasecmp(token, "Range") == 0) {
+            token = strtok_r(NULL, "= \t", &tokptr);
+            if (!token) { continue; }
+            if (strcasecmp(token, "bytes") != 0) { return RANGE_UNSAT; }
+            token = strtok_r(NULL, "-", &tokptr);
+            if (!token) { return RANGE_UNSAT; }
+            request->range_start = strtol(token, NULL, 10);
+            if (request->range_start < 0) { return RANGE_UNSAT; }
+            token = strtok_r(NULL, ", \t", &tokptr);
+            if (!token) {
+                request->range_end = request->range_start + 1048576;
+                continue;
+            }
+            request->range_end = strtol(token, NULL, 10);
+            if (request->range_end < request->range_start) {
+                return RANGE_UNSAT;
+            }
         }
     }
     // Check request headers
@@ -172,6 +193,7 @@ Response parse_request(char *buf, Request *request, int https) {
 
 Response parse_uri(const Request *request, FileInfo *fileinfo) {
     struct stat sbuf = {0};
+    struct tm timeinfo;
     if (!request || !fileinfo ||
         sprintf(fileinfo->path, "dir%s", request->http_uri) < 0) {
         return SERVER_ERROR;
@@ -184,6 +206,11 @@ Response parse_uri(const Request *request, FileInfo *fileinfo) {
     }
     if (!S_ISREG(sbuf.st_mode) || !(S_IRUSR & sbuf.st_mode)) {
         return FORBIDDEN;
+    }
+    if (!strftime(fileinfo->time, sizeof(fileinfo->time),
+                  "%a, %d %b %Y %H:%M:%S GMT",
+                  gmtime_r(&sbuf.st_mtime, &timeinfo))) {
+        return SERVER_ERROR;
     }
     get_mime(fileinfo->path, fileinfo->type);
     fileinfo->size = sbuf.st_size;

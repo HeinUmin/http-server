@@ -6,7 +6,6 @@
 #include "utils.h"
 
 #include <errno.h>
-#include <openssl/types.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdint.h>
@@ -14,8 +13,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int
-send_error(int socket_fd, Request *request, Response response, SSL *ssl) {
+static int send_error(int socket_fd,
+                      const Request *request,
+                      Response response,
+                      long filesize,
+                      SSL *ssl) {
     int err = 0;
     char buf[HTTP_BUF_SIZE];
     char time_str[TIMESTRLEN];
@@ -28,6 +30,10 @@ send_error(int socket_fd, Request *request, Response response, SSL *ssl) {
         err |= snprintf(buf + strlen(buf), HTTP_BUF_SIZE - strlen(buf),
                         "Location: https://%s:%hu%s\r\n", request->http_host,
                         port[1], request->http_uri) < 0;
+    }
+    if (response == RANGE_UNSAT && filesize > 0) {
+        err |= snprintf(buf + strlen(buf), HTTP_BUF_SIZE - strlen(buf),
+                        "Content-Range: bytes */%zu\r\n", filesize) < 0;
     }
     err |= snprintf(buf + strlen(buf), HTTP_BUF_SIZE - strlen(buf),
                     "Content-Length: 0\r\n") < 0;
@@ -42,36 +48,59 @@ send_error(int socket_fd, Request *request, Response response, SSL *ssl) {
     return 0;
 }
 
-static int
-send_file(int socket_fd, Request *request, FileInfo *fileinfo, SSL *ssl) {
+static int send_file(int socket_fd,
+                     const Request *request,
+                     const FileInfo *fileinfo,
+                     SSL *ssl) {
     FILE *fp = NULL;
     int status = 0;
-    size_t sent = 0, readret = 0;
+    long start = 0, end = 0, rest = 0;
+    size_t readret = 0;
     ssize_t sendret = 0;
     char buf[HTTP_BUF_SIZE];
     char time_str[TIMESTRLEN];
 
     memset(buf, 0, HTTP_BUF_SIZE);
     get_time(time_str, "%a, %d %b %Y %H:%M:%S GMT", 1);
-    status |= snprintf(buf, HTTP_BUF_SIZE, "HTTP/1.%d 200 OK\r\n",
-                       request->http_version) < 0;
+    if (request->range_start >= fileinfo->size) { return RANGE_UNSAT; }
+    if (request->range_start < request->range_end) {
+        start = request->range_start;
+        end = request->range_end < fileinfo->size ? request->range_end :
+                                                    fileinfo->size - 1;
+        status |=
+            snprintf(buf, HTTP_BUF_SIZE, "HTTP/1.%d 206 Partial Content\r\n",
+                     request->http_version) < 0;
+    } else {
+        start = request->range_start, end = fileinfo->size - 1;
+        status |= snprintf(buf, HTTP_BUF_SIZE, "HTTP/1.%d 200 OK\r\n",
+                           request->http_version) < 0;
+    }
     status |= snprintf(buf + strlen(buf), HTTP_BUF_SIZE - strlen(buf),
                        "Connection: %s\r\n",
                        request->connection ? "keep-alive" : "close") < 0;
     status |= snprintf(buf + strlen(buf), HTTP_BUF_SIZE - strlen(buf),
                        "Content-Type: %s\r\n", fileinfo->type) < 0;
     status |= snprintf(buf + strlen(buf), HTTP_BUF_SIZE - strlen(buf),
-                       "Content-Length: %zu\r\n", fileinfo->size) < 0;
+                       "Content-Length: %zu\r\n", end - start + 1) < 0;
+    status |= snprintf(buf + strlen(buf), HTTP_BUF_SIZE - strlen(buf),
+                       "Content-Location: %s\r\n", request->http_uri) < 0;
+    status |= snprintf(buf + strlen(buf), HTTP_BUF_SIZE - strlen(buf),
+                       "Content-Range: bytes %zu-%zu/%zu\r\n", start, end,
+                       fileinfo->size) < 0;
+    status |= snprintf(buf + strlen(buf), HTTP_BUF_SIZE - strlen(buf),
+                       "Last-Modified: %s\r\n", fileinfo->time) < 0;
+    status |= snprintf(buf + strlen(buf), HTTP_BUF_SIZE - strlen(buf),
+                       "Accept-Ranges: bytes\r\n") < 0;
     status |= snprintf(buf + strlen(buf), HTTP_BUF_SIZE - strlen(buf),
                        "Date: %s\r\n\r\n", time_str) < 0;
     if (status) {
         log_errno(ERROR, "snprintf", errno);
-        return 1;
+        return SERVER_ERROR;
     }
 
     if (strlen(buf) >= HTTP_BUF_SIZE - 1) {
         loge("send_file", "Buffer overflow");
-        return 1;
+        return SERVER_ERROR;
     }
     sendret = send_message(socket_fd, buf, (int)strlen(buf), ssl);
     if (sendret <= 0) { return -1; }
@@ -84,8 +113,16 @@ send_file(int socket_fd, Request *request, FileInfo *fileinfo, SSL *ssl) {
         return -1;
     }
 
-    while (!feof(fp)) {
-        readret = fread(buf, sizeof(char), HTTP_BUF_SIZE, fp);
+    if (fseek(fp, start, SEEK_SET)) {
+        log_errno(ERROR, "fseek", errno);
+        close_socket(socket_fd);
+        return -1;
+    }
+    rest = end - start + 1;
+    if (end < fileinfo->size) { status = PARTIAL; }
+    while (rest > 0) {
+        readret = fread(buf, sizeof(char),
+                        rest > HTTP_BUF_SIZE ? HTTP_BUF_SIZE : rest, fp);
         if (ferror(fp)) {
             log_errno(ERROR, "fread", errno);
             close_socket(socket_fd);
@@ -97,12 +134,12 @@ send_file(int socket_fd, Request *request, FileInfo *fileinfo, SSL *ssl) {
             status = -1;
             break;
         }
-        sent += sendret;
+        rest -= sendret;
     }
 
-    if (!status && sent != fileinfo->size) {
-        loge("send_file", "Sent %zu bytes, expected %zu bytes", sent,
-             fileinfo->size);
+    if (!status && rest) {
+        loge("send_file", "Sent %zu bytes, expected %zu bytes",
+             end - start + 1 - rest, end - start + 1);
         close_socket(socket_fd);
         status = -1;
     }
@@ -136,10 +173,10 @@ void *handle_request(void *arg) {
                     status = EXIT_FAILURE;
                     break;
                 }
-                if (ret > 0) { response = SERVER_ERROR; }
+                if (ret > 0) { response = ret; }
             }
         }
-        ret = send_error(socket_fd, &request, response, ssl);
+        ret = send_error(socket_fd, &request, response, fileinfo.size, ssl);
         if (ret < 0) {
             status = EXIT_FAILURE;
             break;

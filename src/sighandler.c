@@ -60,12 +60,13 @@ void signal_handler(int sig) {
 
 void *signal_thread(void *arg) {
     int sig = 0;
+    struct sigaction act_ign = {.sa_handler = SIG_IGN};
     struct sigaction act = {.sa_handler = signal_handler,
                             .sa_flags = SA_INTERRUPT,
                             .sa_mask = *(sigset_t *)arg};
 
     sigaction(SIGUSR1, &act, NULL);
-    sigaction(SIGPIPE, SIG_IGN, NULL);
+    sigaction(SIGPIPE, &act_ign, NULL);
     if (sigwait(&act.sa_mask, &sig)) {
         exit_flag++;
         log_errno(FATAL, "sigwait", errno);

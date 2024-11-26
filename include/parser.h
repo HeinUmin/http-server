@@ -2,7 +2,6 @@
 #define PARSER_H
 
 #include <complex.h>
-#include <stdlib.h>
 #define HTTP_BUF_SIZE 8192
 #define HTTP_URI_SIZE 4096
 #define NR_HTTP_METHOD 2
@@ -16,6 +15,7 @@ typedef enum {
     FORBIDDEN,
     NOT_FOUND,
     URI_LONG,
+    RANGE_UNSAT,
     SERVER_ERROR,
     NOT_IMPLEMENTED,
     NOT_SUPPORTED
@@ -27,12 +27,15 @@ typedef struct {
     HttpMethod http_method;
     int http_version;
     int connection;
+    long range_start;
+    long range_end;
 } Request;
 
 typedef struct {
     char type[32];
+    char time[32];
     char path[HTTP_URI_SIZE + 12];
-    size_t size;
+    long size;
 } FileInfo;
 
 extern const char *HTTP_METHOD_STRING[];
