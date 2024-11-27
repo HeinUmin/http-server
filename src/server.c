@@ -12,6 +12,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+
+static inline int get_request_line(char *buf, const Request *request) {
+    if (!buf || !request) { return EXIT_FAILURE; }
+    if (sprintf(buf, "%s %s HTTP/1.%d",
+                HTTP_METHOD_STRING[request->http_method], request->http_uri,
+                request->http_version) < 0) {
+        log_errno(ERROR, "sprintf", errno);
+        return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS;
+}
 
 static int send_error(int socket_fd,
                       const Request *request,
@@ -28,8 +40,12 @@ static int send_error(int socket_fd,
                     RESPONSE_STRING[response]) < 0;
     if (response == MOVED) {
         err |= snprintf(buf + strlen(buf), HTTP_BUF_SIZE - strlen(buf),
-                        "Location: https://%s:%hu%s\r\n", request->http_host,
-                        port[1], request->http_uri) < 0;
+                        "Location: https://%s", request->http_host) < 0;
+        if (port[1] != 443) {
+            err |= snprintf(buf + strlen(buf), 8, ":%hu", port[1]) < 0;
+        }
+        err |= snprintf(buf + strlen(buf), HTTP_BUF_SIZE - strlen(buf),
+                        "%s\r\n", request->http_uri) < 0;
     }
     if (response == RANGE_UNSAT && filesize > 0) {
         err |= snprintf(buf + strlen(buf), HTTP_BUF_SIZE - strlen(buf),
@@ -45,16 +61,18 @@ static int send_error(int socket_fd,
         return -1;
     }
     if (send_message(socket_fd, buf, (int)strlen(buf), ssl) < 0) { return -1; }
+    if (get_request_line(buf, request)) { buf[0] = '\0'; }
+    access_log(RESPONSE_CODE[response], buf, 0);
     return 0;
 }
 
-static int send_file(int socket_fd,
-                     const Request *request,
-                     const FileInfo *fileinfo,
-                     SSL *ssl) {
+static long send_file(int socket_fd,
+                      const Request *request,
+                      const FileInfo *fileinfo,
+                      SSL *ssl) {
     FILE *fp = NULL;
-    int status = 0;
-    long start = 0, end = 0, rest = 0;
+    int response = 200;
+    long status = 0, start = 0, end = 0, rest = 0;
     size_t readret = 0;
     ssize_t sendret = 0;
     char buf[HTTP_BUF_SIZE];
@@ -62,7 +80,7 @@ static int send_file(int socket_fd,
 
     memset(buf, 0, HTTP_BUF_SIZE);
     get_time(time_str, "%a, %d %b %Y %H:%M:%S GMT", 1);
-    if (request->range_start >= fileinfo->size) { return RANGE_UNSAT; }
+    if (request->range_start >= fileinfo->size) { return -3; }
     if (request->range_start < request->range_end) {
         start = request->range_start;
         end = request->range_end < fileinfo->size ? request->range_end :
@@ -70,6 +88,7 @@ static int send_file(int socket_fd,
         status |=
             snprintf(buf, HTTP_BUF_SIZE, "HTTP/1.%d 206 Partial Content\r\n",
                      request->http_version) < 0;
+        response = 206;
     } else {
         start = request->range_start, end = fileinfo->size - 1;
         status |= snprintf(buf, HTTP_BUF_SIZE, "HTTP/1.%d 200 OK\r\n",
@@ -95,12 +114,12 @@ static int send_file(int socket_fd,
                        "Date: %s\r\n\r\n", time_str) < 0;
     if (status) {
         log_errno(ERROR, "snprintf", errno);
-        return SERVER_ERROR;
+        return -2;
     }
 
     if (strlen(buf) >= HTTP_BUF_SIZE - 1) {
         loge("send_file", "Buffer overflow");
-        return SERVER_ERROR;
+        return -2;
     }
     sendret = send_message(socket_fd, buf, (int)strlen(buf), ssl);
     if (sendret <= 0) { return -1; }
@@ -119,27 +138,24 @@ static int send_file(int socket_fd,
         return -1;
     }
     rest = end - start + 1;
-    if (end < fileinfo->size) { status = PARTIAL; }
     while (rest > 0) {
+        memset(buf, 0, HTTP_BUF_SIZE);
         readret = fread(buf, sizeof(char),
                         rest > HTTP_BUF_SIZE ? HTTP_BUF_SIZE : rest, fp);
         if (ferror(fp)) {
             log_errno(ERROR, "fread", errno);
             close_socket(socket_fd);
-            status = -1;
             break;
         }
         sendret = send_message(socket_fd, buf, (int)readret, ssl);
-        if (sendret < 0) {
-            status = -1;
-            break;
-        }
+        if (sendret < 0) { break; }
+        status += sendret;
         rest -= sendret;
     }
 
-    if (!status && rest) {
-        loge("send_file", "Sent %zu bytes, expected %zu bytes",
-             end - start + 1 - rest, end - start + 1);
+    if (get_request_line(buf, request)) { buf[0] = '\0'; }
+    access_log(response, buf, status);
+    if (rest) {
         close_socket(socket_fd);
         status = -1;
     }
@@ -152,8 +168,7 @@ void *handle_request(void *arg) {
     Response response = OK;
     FileInfo fileinfo = {0};
     char buf[HTTP_BUF_SIZE];
-    int ret = 0;
-    int status = EXIT_SUCCESS;
+    long ret = 0;
     int https = ((SockInfo *)arg)->https;
     int socket_fd = ((SockInfo *)arg)->socket_fd;
     SSL *ssl = https ? ((SockInfo *)arg)->ssl : NULL;
@@ -167,23 +182,18 @@ void *handle_request(void *arg) {
         if (!response) {
             response = parse_uri(&request, &fileinfo);
             if (!response) {
-                // TODO: Handle PARTIAL_CONTENT
                 ret = send_file(socket_fd, &request, &fileinfo, ssl);
-                if (ret < 0) {
-                    status = EXIT_FAILURE;
+                if (ret == -1) {
                     break;
+                } else if (ret == -2) {
+                    response = SERVER_ERROR;
+                } else if (ret == -3) {
+                    response = RANGE_UNSAT;
                 }
-                if (ret > 0) { response = ret; }
             }
         }
-        ret = send_error(socket_fd, &request, response, fileinfo.size, ssl);
-        if (ret < 0) {
-            status = EXIT_FAILURE;
+        if (send_error(socket_fd, &request, response, fileinfo.size, ssl) < 0) {
             break;
-        } else if (ret > 0 && request.http_method == GET) {
-            access_log(RESPONSE_CODE[response], buf, fileinfo.size);
-        } else {
-            access_log(RESPONSE_CODE[response], buf, 0);
         }
         if (!request.connection) {
             close_socket(socket_fd);
@@ -191,7 +201,7 @@ void *handle_request(void *arg) {
         }
     }
     remove_thread(pthread_self());
-    return (void *)(intptr_t)status;  // NOLINT(performance-no-int-to-ptr)
+    return NULL;
 }
 
 void *server(void *arg) {
@@ -209,13 +219,13 @@ void *server(void *arg) {
     if (https) {
         ctx = init_ssl();
         if (!ctx) {
-            if (raise(SIGTERM)) { log_errno(FATAL, "raise", errno); }
+            if (kill(getpid(), SIGTERM)) { log_errno(FATAL, "raise", errno); }
             return (void *)EXIT_FAILURE;
         }
     }
     server_sock = init_socket(&sockaddr);
     if (server_sock < 0) {
-        if (raise(SIGTERM)) { log_errno(FATAL, "raise", errno); }
+        if (kill(getpid(), SIGTERM)) { log_errno(FATAL, "raise", errno); }
         return (void *)EXIT_FAILURE;
     }
     printf("HTTP%s server started\n", https ? "S" : "");
@@ -229,7 +239,7 @@ void *server(void *arg) {
         sockinfo = malloc(sizeof(SockInfo));
         if (!sockinfo) {
             log_errno(FATAL, "malloc", errno);
-            if (raise(SIGTERM)) { log_errno(FATAL, "raise", errno); }
+            if (kill(getpid(), SIGTERM)) { log_errno(FATAL, "raise", errno); }
             close_socket(server_sock);
             break;
         }
@@ -242,11 +252,10 @@ void *server(void *arg) {
         }
         if (sockinfo->socket_fd < 0) {
             free(sockinfo);
-            if (raise(SIGTERM)) { log_errno(FATAL, "raise", errno); }
+            if (kill(getpid(), SIGTERM)) { log_errno(FATAL, "raise", errno); }
             return (void *)EXIT_FAILURE;
         }
         if (https) {
-            // TODO: Refine SSL
             ssl = connect_ssl(sockinfo->socket_fd, ctx);
             if (!ssl) {
                 free(sockinfo);

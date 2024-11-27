@@ -87,7 +87,7 @@ ssize_t recv_message(int socket_fd, char *buf, int len, SSL *ssl) {
     } else if (ret == 0) {
         close_socket(socket_fd);
     } else {
-        logt("recv_msg", "%s", buf);
+        error_log(TRACE, "recv_msg", buf);
     }
     return ret;
 }
@@ -105,7 +105,7 @@ ssize_t send_message(int socket_fd, const char *buf, int len, SSL *ssl) {
     } else if (ret == 0) {
         close_socket(socket_fd);
     } else {
-        logt("send_msg", "%s", buf);
+        error_log(TRACE, "send_msg", buf);
     }
     return ret;
 }

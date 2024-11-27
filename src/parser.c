@@ -2,6 +2,7 @@
 #include "utils.h"
 
 #include <ctype.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -86,7 +87,7 @@ Response parse_request(char *buf, Request *request, int https) {
     line = strtok_r(buf, "\r\n", &lineptr);
     if (!line) { return BAD_REQUEST; }
     if (strlen(line) >= HTTP_URI_SIZE + 32) { return BAD_REQUEST; }
-    strlcpy(request_line, line, HTTP_URI_SIZE + 32);
+    strncpy(request_line, line, HTTP_URI_SIZE + 32);
     // Parse request method
     token = strtok_r(request_line, " ", &tokptr);
     if (!token) { return BAD_REQUEST; }
@@ -110,11 +111,11 @@ Response parse_request(char *buf, Request *request, int https) {
         tmpptr = strchr(token, '/');
         if (!tmpptr) { return BAD_REQUEST; }
         if (tmpptr - token >= HTTP_URI_SIZE) { return URI_LONG; }
-        strlcpy(request->http_host, token, tmpptr - token + 1);
+        strncpy(request->http_host, token, tmpptr - token);
         token = tmpptr;
     }
     if (strlen(token) >= HTTP_URI_SIZE) { return URI_LONG; }
-    strlcpy(request->http_uri, token, HTTP_URI_SIZE);
+    strncpy(request->http_uri, token, HTTP_URI_SIZE);
     // Parse request version
     token = strtok_r(NULL, " ", &tokptr);
     if (!token) { return BAD_REQUEST; }
@@ -156,7 +157,7 @@ Response parse_request(char *buf, Request *request, int https) {
                 token += 8;
             }
             if (strlen(token) >= HTTP_URI_SIZE) { return URI_LONG; }
-            strlcpy(request->http_host, token, HTTP_URI_SIZE);
+            strncpy(request->http_host, token, HTTP_URI_SIZE);
             if (strtok_r(NULL, " \t", &tokptr)) { return BAD_REQUEST; }
         } else if (strcasecmp(token, "Range") == 0) {
             token = strtok_r(NULL, "= \t", &tokptr);
@@ -168,7 +169,7 @@ Response parse_request(char *buf, Request *request, int https) {
             if (request->range_start < 0) { return RANGE_UNSAT; }
             token = strtok_r(NULL, ", \t", &tokptr);
             if (!token) {
-                request->range_end = request->range_start + 1048576;
+                request->range_end = LONG_MAX;
                 continue;
             }
             request->range_end = strtol(token, NULL, 10);
@@ -195,7 +196,7 @@ Response parse_uri(const Request *request, FileInfo *fileinfo) {
     struct stat sbuf = {0};
     struct tm timeinfo;
     if (!request || !fileinfo ||
-        sprintf(fileinfo->path, "dir%s", request->http_uri) < 0) {
+        sprintf(fileinfo->path, ".%s", request->http_uri) < 0) {
         return SERVER_ERROR;
     }
     url_decode(fileinfo->path);
