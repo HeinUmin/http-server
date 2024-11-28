@@ -2,7 +2,6 @@
 #include "log.h"
 #include "utils.h"
 
-#include <errno.h>
 #include <openssl/err.h>
 #include <string.h>
 #include <unistd.h>
@@ -147,6 +146,7 @@ SSL_CTX *init_ssl(void) {
 
 int close_ssl(SSL *ssl, int socket_fd) {
     char err_buf[128];
+    if (!ssl) { return 0; }
     if (SSL_shutdown(ssl) < 0) {
         loge("close_ssl", "%s", ERR_error_string(ERR_get_error(), err_buf));
         close_socket(socket_fd);

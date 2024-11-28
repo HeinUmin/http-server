@@ -6,11 +6,7 @@
 #include "utils.h"
 
 #include <errno.h>
-#include <pthread.h>
 #include <signal.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -117,6 +113,7 @@ static long send_file(int socket_fd,
         return -2;
     }
 
+    // Send header
     if (strlen(buf) >= HTTP_BUF_SIZE - 1) {
         loge("send_file", "Buffer overflow");
         return -2;
@@ -132,6 +129,7 @@ static long send_file(int socket_fd,
         return -1;
     }
 
+    // Send file
     if (fseek(fp, start, SEEK_SET)) {
         log_errno(ERROR, "fseek", errno);
         close_socket(socket_fd);
@@ -200,6 +198,7 @@ void *handle_request(void *arg) {
             break;
         }
     }
+    close_ssl(ssl, socket_fd);
     remove_thread(pthread_self());
     return NULL;
 }

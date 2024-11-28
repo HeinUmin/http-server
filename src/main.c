@@ -5,20 +5,16 @@
 
 #include <errno.h>
 #include <getopt.h>
-#include <pthread.h>
 #include <signal.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 void usage(char *name) {
     int i = 0;
     printf("Usage: %s [options]\n", name);
     printf("Options:\n");
     printf("  -h, --help               Display this help message\n");
-    printf("  -p, --http-port=PORT     Set HTTP port\n");
-    printf("  -s, --https-port=PORT    Set HTTPS port\n");
+    printf("  -p, --http-port=PORT     Set HTTP port, 0 for close\n");
+    printf("  -s, --https-port=PORT    Set HTTPS port, 0 for close\n");
     printf("  -l, --log-level={");
     for (i = 0; i < NR_LOG_LEVEL; i++) {
         printf("%s%s", LEVEL_STRING[i], (i == NR_LOG_LEVEL - 1) ? "}\n" : "|");
@@ -47,6 +43,7 @@ int main(int argc, char *argv[]) {
     pthread_t handler_thread = 0, http_thread = 0, https_thread = 0;
     void *handler_status = NULL, *http_status = NULL, *https_status = NULL;
 
+    // Parse args
     int opt = 0;
     long temp = 0;
     struct option longopts[] = {{"help", no_argument, NULL, 'h'},
@@ -95,15 +92,18 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    // Setup signal handler
     if (init_log(log_level)) { return EXIT_FAILURE; }
     sigemptyset(&sigset), sigaddset(&sigset, SIGQUIT),
         sigaddset(&sigset, SIGTERM), sigaddset(&sigset, SIGINT);
     pthread_sigmask(SIG_BLOCK, &sigset, NULL);
 
+    // Start server
     pthread_create(&handler_thread, NULL, signal_thread, &sigset);
     if (port[0]) { pthread_create(&http_thread, NULL, server, (void *)0); }
     if (port[1]) { pthread_create(&https_thread, NULL, server, (void *)1); }
 
+    // Wait for server to finish
     pthread_join(handler_thread, &handler_status);
     pthread_sigmask(SIG_UNBLOCK, &sigset, NULL);
     if (port[0]) { pthread_join(http_thread, &http_status); }

@@ -7,58 +7,11 @@
 extern const char *LEVEL_STRING[];
 typedef enum { TRACE, DEBUG, INFO, WARN, ERROR, FATAL } LogLevel;
 
-/**
- * @brief Initialize log files
- *
- * @param level Program log level
- * @return int 0 on success
- */
 int init_log(LogLevel level);
-
-/**
- * @brief Close log files
- *
- * @return int 0 on success
- */
 int close_log(void);
-
-/**
- * @brief Log an error message
- *
- * @param level message level
- * @param src error source
- * @param msg error message
- * @return int 0 on success
- */
 int error_log(LogLevel level, const char *src, const char *msg);
-
-/**
- * @brief Log an access message
- *
- * @param code response code
- * @param request request string
- * @param sent bytes sent
- * @return int 0 on success
- */
 int access_log(int code, const char *request, size_t sent);
-
-/**
- * @brief Log an error message with errno
- *
- * @param level message level
- * @param src error source
- * @param errnum error number
- */
 void log_errno(LogLevel level, const char *src, int errnum);
-
-/**
- * @brief Log an error message with format
- *
- * @param level message level
- * @param src error source
- * @param format error message format
- * @param ... error message arguments
- */
 void log_format(int level, const char *src, const char *format, ...)
     __attribute__((format(printf, 3, 4)));
 

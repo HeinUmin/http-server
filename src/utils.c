@@ -1,8 +1,4 @@
 #include "utils.h"
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <time.h>
 
 __thread struct sockaddr_in sock = {0};

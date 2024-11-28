@@ -1,7 +1,6 @@
 #ifndef PARSER_H
 #define PARSER_H
 
-#include <complex.h>
 #define HTTP_BUF_SIZE 8192
 #define HTTP_URI_SIZE 4096
 #define NR_HTTP_METHOD 2
@@ -34,7 +33,7 @@ typedef struct {
 typedef struct {
     char type[32];
     char time[32];
-    char path[HTTP_URI_SIZE + 12];
+    char path[HTTP_URI_SIZE];
     long size;
 } FileInfo;
 

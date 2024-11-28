@@ -36,6 +36,7 @@ static size_t url_decode(char *str) {
             *dest = ' ';
             break;
         case '%':
+            // Parse %xx
             if (len >= 2 && isxdigit(*(data + 1)) && isxdigit(*(data + 2))) {
                 hex[0] = *(data + 1), hex[1] = *(data + 2);
                 *dest = (char)strtol(hex, NULL, 16);
@@ -114,8 +115,14 @@ Response parse_request(char *buf, Request *request, int https) {
         strncpy(request->http_host, token, tmpptr - token);
         token = tmpptr;
     }
-    if (strlen(token) >= HTTP_URI_SIZE) { return URI_LONG; }
+    if (strlen(token) >= HTTP_URI_SIZE - 1) { return URI_LONG; }
     strncpy(request->http_uri, token, HTTP_URI_SIZE);
+    if (request->http_uri[strlen(request->http_uri) - 1] == '/') {
+        if (strlen(request->http_uri) + 12 >= HTTP_URI_SIZE) {
+            return URI_LONG;
+        }
+        strcat(request->http_uri, "index.html");
+    }
     // Parse request version
     token = strtok_r(NULL, " ", &tokptr);
     if (!token) { return BAD_REQUEST; }
@@ -160,6 +167,7 @@ Response parse_request(char *buf, Request *request, int https) {
             strncpy(request->http_host, token, HTTP_URI_SIZE);
             if (strtok_r(NULL, " \t", &tokptr)) { return BAD_REQUEST; }
         } else if (strcasecmp(token, "Range") == 0) {
+            // Parse Range header
             token = strtok_r(NULL, "= \t", &tokptr);
             if (!token) { continue; }
             if (strcasecmp(token, "bytes") != 0) { return RANGE_UNSAT; }
@@ -195,19 +203,18 @@ Response parse_request(char *buf, Request *request, int https) {
 Response parse_uri(const Request *request, FileInfo *fileinfo) {
     struct stat sbuf = {0};
     struct tm timeinfo;
+    // Get file path
     if (!request || !fileinfo ||
-        sprintf(fileinfo->path, ".%s", request->http_uri) < 0) {
+        snprintf(fileinfo->path, HTTP_URI_SIZE, ".%s", request->http_uri) < 0) {
         return SERVER_ERROR;
     }
     url_decode(fileinfo->path);
+    // Check file
     if (stat(fileinfo->path, &sbuf) < 0) { return NOT_FOUND; }
-    if (S_ISDIR(sbuf.st_mode)) {
-        strcat(fileinfo->path, "/index.html");
-        if (stat(fileinfo->path, &sbuf) < 0) { return NOT_FOUND; }
-    }
     if (!S_ISREG(sbuf.st_mode) || !(S_IRUSR & sbuf.st_mode)) {
         return FORBIDDEN;
     }
+    // Get file info
     if (!strftime(fileinfo->time, sizeof(fileinfo->time),
                   "%a, %d %b %Y %H:%M:%S GMT",
                   gmtime_r(&sbuf.st_mtime, &timeinfo))) {
