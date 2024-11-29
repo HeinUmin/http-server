@@ -1,5 +1,7 @@
 ## Usage
 
+**Please open as root user**, otherwise you should custom ports.
+
 ```
 Usage: ./http-server [options]
 Options:

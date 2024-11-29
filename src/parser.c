@@ -211,7 +211,8 @@ Response parse_uri(const Request *request, FileInfo *fileinfo) {
     url_decode(fileinfo->path);
     // Check file
     if (stat(fileinfo->path, &sbuf) < 0) { return NOT_FOUND; }
-    if (!S_ISREG(sbuf.st_mode) || !(S_IRUSR & sbuf.st_mode)) {
+    if (!S_ISREG(sbuf.st_mode) || !(S_IRUSR & sbuf.st_mode) ||
+        strstr(fileinfo->path, "/../")) {
         return FORBIDDEN;
     }
     // Get file info
